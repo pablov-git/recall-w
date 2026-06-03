@@ -6,28 +6,22 @@ import type {
   FlashcardList,
   Phase,
   RecallState,
+  SrsRating,
 } from "../types";
 import {
   cleanFileName,
+  createEmptyRecallState,
   createId,
   getUniqueListName,
-  normalizeLists,
   parseVocabulary,
 } from "../utils/flashcards";
-
-const STORAGE_KEY = "recall.flashcards.v1";
-
-const initialState: RecallState = {
-  lists: [],
-  currentListId: null,
-  currentIndex: 0,
-  flipped: false,
-  firstSide: "left",
-  phase: "all",
-  sessionFinished: false,
-  sessionTotal: 0,
-  sessionReviewedIds: [],
-};
+import { downloadRecallExport, readRecallImport } from "../utils/importExport";
+import { isCardDue, scheduleCardWithFsrs } from "../utils/srs";
+import {
+  loadRecallState,
+  replaceRecallState,
+  saveRecallState,
+} from "../storage/db";
 
 function getCurrentListFromState(state: RecallState): FlashcardList | null {
   return state.lists.find((list) => list.id === state.currentListId) || null;
@@ -36,10 +30,17 @@ function getCurrentListFromState(state: RecallState): FlashcardList | null {
 function getActiveCardsFromList(
   list: FlashcardList | null,
   phase: Phase,
+  spacedRepetitionEnabled: boolean,
   keepCardId?: string,
 ): ActiveCard[] {
   if (!list) {
     return [];
+  }
+
+  if (spacedRepetitionEnabled) {
+    return list.cards
+      .map((card, originalIndex) => ({ card, originalIndex }))
+      .filter((item) => isCardDue(item.card) || item.card.id === keepCardId);
   }
 
   return list.cards
@@ -53,49 +54,13 @@ function getActiveCardsFromList(
     });
 }
 
-function restoreState(): RecallState {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-
-    if (!saved) {
-      return initialState;
-    }
-
-    const lists = Array.isArray(saved.lists)
-      ? normalizeLists(saved.lists)
-      : [];
-
-    const currentListId =
-      saved.currentListId &&
-      lists.some((list) => list.id === saved.currentListId)
-        ? saved.currentListId
-        : lists[0]?.id || null;
-
-    return {
-      lists,
-      currentListId,
-      currentIndex: Number.isInteger(saved.currentIndex)
-        ? saved.currentIndex
-        : 0,
-      flipped: Boolean(saved.flipped),
-      firstSide: saved.firstSide === "right" ? "right" : "left",
-      phase: saved.phase === "failed" ? "failed" : "all",
-      sessionFinished: Boolean(saved.sessionFinished),
-      sessionTotal: Number.isInteger(saved.sessionTotal)
-        ? saved.sessionTotal
-        : 0,
-      sessionReviewedIds: Array.isArray(saved.sessionReviewedIds)
-        ? saved.sessionReviewedIds
-        : [],
-    };
-  } catch {
-    return initialState;
-  }
-}
-
 function resetSessionForState(state: RecallState): RecallState {
   const list = getCurrentListFromState(state);
-  const activeCards = getActiveCardsFromList(list, state.phase);
+  const activeCards = getActiveCardsFromList(
+    list,
+    state.phase,
+    state.settings.spacedRepetitionEnabled,
+  );
 
   return {
     ...state,
@@ -115,11 +80,13 @@ function shuffleArray<T>(items: T[]): T[] {
   return copy;
 }
 
-function updateCardStatus(
+function updateCard(
   lists: FlashcardList[],
   listId: string | null,
   cardId: string,
-  status: CardStatus,
+  updater: (
+    card: FlashcardList["cards"][number],
+  ) => FlashcardList["cards"][number],
 ): FlashcardList[] {
   return lists.map((list) => {
     if (list.id !== listId) {
@@ -129,17 +96,45 @@ function updateCardStatus(
     return {
       ...list,
       cards: list.cards.map((card) =>
-        card.id === cardId ? { ...card, status } : card,
+        card.id === cardId ? updater(card) : card,
       ),
     };
   });
 }
 
-function getFinishData(list: FlashcardList | null, phase: Phase) {
+function updateCardStatus(
+  lists: FlashcardList[],
+  listId: string | null,
+  cardId: string,
+  status: CardStatus,
+): FlashcardList[] {
+  return updateCard(lists, listId, cardId, (card) => ({
+    ...card,
+    status,
+  }));
+}
+
+function getFinishData(
+  list: FlashcardList | null,
+  phase: Phase,
+  spacedRepetitionEnabled: boolean,
+) {
   const total = list?.cards.length || 0;
   const known = list?.cards.filter((card) => card.status === "known").length || 0;
   const unknown =
     list?.cards.filter((card) => card.status === "unknown").length || 0;
+
+  if (spacedRepetitionEnabled) {
+    return {
+      title: "Repaso terminado",
+      message: "No hay tarjetas pendientes ahora.",
+      total,
+      known,
+      unknown,
+      showReviewFailed: false,
+      showRepeatFailed: false,
+    };
+  }
 
   if (phase === "all") {
     return {
@@ -184,10 +179,11 @@ function getFinishData(list: FlashcardList | null, phase: Phase) {
 }
 
 export function useRecall() {
-  const [state, setState] = useState<RecallState>(restoreState);
-  const [fileFeedbackOverride, setFileFeedbackOverride] = useState<string | null>(
-    null,
-  );
+  const [state, setState] = useState<RecallState>(createEmptyRecallState);
+  const [isReady, setIsReady] = useState(false);
+  const [fileFeedbackOverride, setFileFeedbackOverride] = useState<
+    string | null
+  >(null);
   const [answerFeedback, setAnswerFeedback] = useState<{
     status: Exclude<CardStatus, null>;
     cardId: string;
@@ -195,19 +191,53 @@ export function useRecall() {
 
   const answerFeedbackTimer = useRef<number | null>(null);
 
-  const currentList = useMemo(
-    () => getCurrentListFromState(state),
-    [state],
-  );
+  useEffect(() => {
+    let cancelled = false;
+
+    loadRecallState()
+      .then((savedState) => {
+        if (cancelled) {
+          return;
+        }
+
+        setState(savedState);
+        setIsReady(true);
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setState(createEmptyRecallState());
+        setIsReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isReady) {
+      return;
+    }
+
+    void saveRecallState(state);
+  }, [state, isReady]);
+
+  const currentList = useMemo(() => getCurrentListFromState(state), [state]);
+
+  const spacedRepetitionEnabled = state.settings.spacedRepetitionEnabled;
 
   const activeCards = useMemo(
     () =>
       getActiveCardsFromList(
         currentList,
         state.phase,
+        spacedRepetitionEnabled,
         answerFeedback?.cardId,
       ),
-    [currentList, state.phase, answerFeedback?.cardId],
+    [currentList, state.phase, spacedRepetitionEnabled, answerFeedback?.cardId],
   );
 
   const safeCurrentIndex =
@@ -252,9 +282,13 @@ export function useRecall() {
       : currentList.labels[0]
     : "Columna 2";
 
-  const progressText = `${state.phase === "failed" ? "Falladas" : "Tarjeta"} ${
-    safeCurrentIndex + 1
-  } de ${activeCards.length}`;
+  const progressText = `${
+    spacedRepetitionEnabled
+      ? "Pendiente"
+      : state.phase === "failed"
+        ? "Falladas"
+        : "Tarjeta"
+  } ${safeCurrentIndex + 1} de ${activeCards.length}`;
 
   const sideHint = state.flipped
     ? "Viendo la otra cara"
@@ -277,11 +311,11 @@ export function useRecall() {
       ? 0
       : Math.round((reviewed / effectiveSessionTotal) * 100);
 
-  const finish = getFinishData(currentList, state.phase);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [state]);
+  const finish = getFinishData(
+    currentList,
+    state.phase,
+    spacedRepetitionEnabled,
+  );
 
   const loadFile = useCallback((file: File) => {
     const reader = new FileReader();
@@ -371,6 +405,22 @@ export function useRecall() {
     }));
   }, []);
 
+  const toggleSpacedRepetition = useCallback((enabled: boolean) => {
+    setState((prev) =>
+      resetSessionForState({
+        ...prev,
+        currentIndex: 0,
+        flipped: false,
+        phase: "all",
+        sessionFinished: false,
+        settings: {
+          ...prev.settings,
+          spacedRepetitionEnabled: enabled,
+        },
+      }),
+    );
+  }, []);
+
   const flipCard = useCallback(() => {
     if (
       state.sessionFinished ||
@@ -428,6 +478,10 @@ export function useRecall() {
       const list = getCurrentListFromState(prev);
 
       if (!list) {
+        return prev;
+      }
+
+      if (prev.settings.spacedRepetitionEnabled) {
         return prev;
       }
 
@@ -489,7 +543,76 @@ export function useRecall() {
     });
   }, []);
 
-  const markCard = useCallback(
+  const advanceAfterAnswer = useCallback(
+    (status: Exclude<CardStatus, null>, activeCardsBeforeLength: number) => {
+      setState((prev) => {
+        const list = getCurrentListFromState(prev);
+        const activeCardsAfter = getActiveCardsFromList(
+          list,
+          prev.phase,
+          prev.settings.spacedRepetitionEnabled,
+        );
+
+        if (prev.settings.spacedRepetitionEnabled) {
+          if (activeCardsAfter.length === 0) {
+            return {
+              ...prev,
+              sessionFinished: true,
+            };
+          }
+
+          const nextIndex = Math.min(
+            safeCurrentIndex,
+            activeCardsAfter.length - 1,
+          );
+
+          return {
+            ...prev,
+            currentIndex: nextIndex,
+          };
+        }
+
+        if (prev.phase === "all") {
+          if (safeCurrentIndex >= activeCardsBeforeLength - 1) {
+            return {
+              ...prev,
+              sessionFinished: true,
+            };
+          }
+
+          return {
+            ...prev,
+            currentIndex: safeCurrentIndex + 1,
+          };
+        }
+
+        let nextIndex = safeCurrentIndex;
+
+        if (status === "unknown") {
+          nextIndex++;
+        }
+
+        if (
+          activeCardsAfter.length === 0 ||
+          nextIndex >= activeCardsAfter.length ||
+          prev.sessionReviewedIds.length >= prev.sessionTotal
+        ) {
+          return {
+            ...prev,
+            sessionFinished: true,
+          };
+        }
+
+        return {
+          ...prev,
+          currentIndex: nextIndex,
+        };
+      });
+    },
+    [safeCurrentIndex],
+  );
+
+  const markNormalCard = useCallback(
     (status: Exclude<CardStatus, null>) => {
       const currentItem = activeCards[safeCurrentIndex] || activeCards[0];
 
@@ -528,50 +651,66 @@ export function useRecall() {
       answerFeedbackTimer.current = window.setTimeout(() => {
         answerFeedbackTimer.current = null;
         setAnswerFeedback(null);
-
-        setState((prev) => {
-          if (prev.phase === "all") {
-            if (safeCurrentIndex >= activeCards.length - 1) {
-              return {
-                ...prev,
-                sessionFinished: true,
-              };
-            }
-
-            return {
-              ...prev,
-              currentIndex: safeCurrentIndex + 1,
-            };
-          }
-
-          const list = getCurrentListFromState(prev);
-          const activeCardsAfter = getActiveCardsFromList(list, prev.phase);
-
-          let nextIndex = safeCurrentIndex;
-
-          if (status === "unknown") {
-            nextIndex++;
-          }
-
-          if (
-            activeCardsAfter.length === 0 ||
-            nextIndex >= activeCardsAfter.length ||
-            prev.sessionReviewedIds.length >= prev.sessionTotal
-          ) {
-            return {
-              ...prev,
-              sessionFinished: true,
-            };
-          }
-
-          return {
-            ...prev,
-            currentIndex: nextIndex,
-          };
-        });
+        advanceAfterAnswer(status, activeCards.length);
       }, 260);
     },
-    [activeCards, safeCurrentIndex, state.sessionFinished],
+    [
+      activeCards,
+      safeCurrentIndex,
+      state.sessionFinished,
+      advanceAfterAnswer,
+    ],
+  );
+
+  const rateSrsCard = useCallback(
+    (rating: SrsRating) => {
+      const currentItem = activeCards[safeCurrentIndex] || activeCards[0];
+
+      if (
+        state.sessionFinished ||
+        !currentItem ||
+        answerFeedbackTimer.current
+      ) {
+        return;
+      }
+
+      const cardId = currentItem.card.id;
+      const visualStatus: Exclude<CardStatus, null> =
+        rating === "again" ? "unknown" : "known";
+
+      setAnswerFeedback({ status: visualStatus, cardId });
+
+      setState((prev) => {
+        const sessionReviewedIds = prev.sessionReviewedIds.includes(cardId)
+          ? prev.sessionReviewedIds
+          : [...prev.sessionReviewedIds, cardId];
+
+        return {
+          ...prev,
+          lists: updateCard(prev.lists, prev.currentListId, cardId, (card) => ({
+            ...card,
+            status: visualStatus,
+            srs: scheduleCardWithFsrs(card, rating),
+          })),
+          flipped: false,
+          sessionTotal:
+            prev.sessionTotal === 0 ? activeCards.length : prev.sessionTotal,
+          sessionReviewedIds,
+        };
+      });
+
+      answerFeedbackTimer.current = window.setTimeout(() => {
+        answerFeedbackTimer.current = null;
+        setAnswerFeedback(null);
+        advanceAfterAnswer(visualStatus, activeCards.length);
+      }, 260);
+    },
+    [
+      activeCards,
+      safeCurrentIndex,
+      state.sessionFinished,
+      advanceAfterAnswer,
+    ],
   );
 
   const startFailedReview = useCallback(() => {
@@ -629,6 +768,34 @@ export function useRecall() {
     });
   }, []);
 
+  const exportData = useCallback(() => {
+    downloadRecallExport(state);
+  }, [state]);
+
+  const importData = useCallback(async (file: File) => {
+    try {
+      const importedState = await readRecallImport(file);
+
+      const accepted = window.confirm(
+        "La importación sustituirá todos los datos actuales. Si aceptas, perderás los datos que tengas ahora.",
+      );
+
+      if (!accepted) {
+        return;
+      }
+
+      await replaceRecallState(importedState);
+      setState(importedState);
+      setFileFeedbackOverride("Datos importados correctamente.");
+    } catch (error) {
+      setFileFeedbackOverride(
+        error instanceof Error
+          ? error.message
+          : "No se han podido importar los datos.",
+      );
+    }
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -650,12 +817,12 @@ export function useRecall() {
         flipCard();
       }
 
-      if (event.key.toLowerCase() === "s") {
-        markCard("known");
+      if (!spacedRepetitionEnabled && event.key.toLowerCase() === "s") {
+        markNormalCard("known");
       }
 
-      if (event.key.toLowerCase() === "n") {
-        markCard("unknown");
+      if (!spacedRepetitionEnabled && event.key.toLowerCase() === "n") {
+        markNormalCard("unknown");
       }
     };
 
@@ -664,9 +831,17 @@ export function useRecall() {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [nextCard, prevCard, flipCard, markCard]);
+  }, [
+    nextCard,
+    prevCard,
+    flipCard,
+    markNormalCard,
+    spacedRepetitionEnabled,
+  ]);
 
   return {
+    isReady,
+
     lists: state.lists,
     currentList,
     currentListId: state.currentListId,
@@ -679,6 +854,7 @@ export function useRecall() {
     hasActiveCards,
     shouldShowFinish,
     fileFeedback,
+    spacedRepetitionEnabled,
 
     frontText,
     backText,
@@ -694,12 +870,16 @@ export function useRecall() {
     selectList,
     deleteCurrentList,
     changeFirstSide,
+    toggleSpacedRepetition,
     flipCard,
     nextCard,
     prevCard,
     shuffleCards,
-    markCard,
+    markNormalCard,
+    rateSrsCard,
     startFailedReview,
     restartCurrentList,
+    exportData,
+    importData,
   };
 }

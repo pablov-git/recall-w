@@ -11,6 +11,14 @@ import { useRecall } from "./hooks/useRecall";
 function App() {
   const recall = useRecall();
 
+  if (!recall.isReady) {
+    return (
+      <main className="mx-auto max-w-[980px] px-4 py-6 lg:py-10">
+        <AppHeader />
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto max-w-[980px] px-4 py-6 lg:py-10">
       <AppHeader />
@@ -66,16 +74,22 @@ function App() {
                 currentListId={recall.currentListId}
                 firstSide={recall.firstSide}
                 disabled={recall.lists.length === 0}
+                spacedRepetitionEnabled={recall.spacedRepetitionEnabled}
                 onSelectList={recall.selectList}
                 onDeleteList={recall.deleteCurrentList}
                 onChangeFirstSide={recall.changeFirstSide}
+                onToggleSpacedRepetition={recall.toggleSpacedRepetition}
                 onShuffle={recall.shuffleCards}
+                onExportData={recall.exportData}
+                onImportData={recall.importData}
               />
             </div>
 
             <AnswerActions
-              onUnknown={() => recall.markCard("unknown")}
-              onKnown={() => recall.markCard("known")}
+              spacedRepetitionEnabled={recall.spacedRepetitionEnabled}
+              onUnknown={() => recall.markNormalCard("unknown")}
+              onKnown={() => recall.markNormalCard("known")}
+              onRateSrs={recall.rateSrsCard}
             />
           </div>
         )}

@@ -5,10 +5,14 @@ type ControlsPanelProps = {
   currentListId: string | null;
   firstSide: FirstSide;
   disabled: boolean;
+  spacedRepetitionEnabled: boolean;
   onSelectList: (listId: string) => void;
   onDeleteList: () => void;
   onChangeFirstSide: (firstSide: FirstSide) => void;
+  onToggleSpacedRepetition: (enabled: boolean) => void;
   onShuffle: () => void;
+  onExportData: () => void;
+  onImportData: (file: File) => void;
 };
 
 export function ControlsPanel({
@@ -16,10 +20,14 @@ export function ControlsPanel({
   currentListId,
   firstSide,
   disabled,
+  spacedRepetitionEnabled,
   onSelectList,
   onDeleteList,
   onChangeFirstSide,
+  onToggleSpacedRepetition,
   onShuffle,
+  onExportData,
+  onImportData,
 }: ControlsPanelProps) {
   const currentList = lists.find((list) => list.id === currentListId) || null;
   const labels = currentList?.labels || ["Columna 1", "Columna 2"];
@@ -81,15 +89,78 @@ export function ControlsPanel({
           </select>
         </div>
 
-        <div className="grid gap-2">
-          <button
-            className="rounded-[14px] border border-primary px-4 py-2 font-medium text-secondary-foreground transition hover:bg-primary/15 disabled:opacity-60"
-            type="button"
-            disabled={disabled}
-            onClick={onShuffle}
+        {!spacedRepetitionEnabled && (
+          <div className="mb-3 grid gap-2">
+            <button
+              className="rounded-[14px] border border-primary px-4 py-2 font-medium text-secondary-foreground transition hover:bg-primary/15 disabled:opacity-60"
+              type="button"
+              disabled={disabled}
+              onClick={onShuffle}
+            >
+              Mezclar tarjetas
+            </button>
+          </div>
+        )}
+
+        <div className="mb-3 rounded-[14px] border border-border bg-card p-3">
+          <label
+            htmlFor="spacedRepetition"
+            className="flex cursor-pointer items-center justify-between gap-3"
           >
-            Mezclar tarjetas
+            <span className="min-w-0 whitespace-nowrap text-sm font-medium">
+              Repetición espaciada
+            </span>
+
+            <span className="relative inline-flex shrink-0 items-center">
+              <input
+                id="spacedRepetition"
+                type="checkbox"
+                className="peer sr-only"
+                checked={spacedRepetitionEnabled}
+                onChange={(event) =>
+                  onToggleSpacedRepetition(event.target.checked)
+                }
+              />
+
+              <span className="h-6 w-11 rounded-full border border-border bg-muted transition peer-checked:border-primary peer-checked:bg-primary/25" />
+
+              <span className="absolute left-1 h-4 w-4 rounded-full bg-muted-foreground transition peer-checked:translate-x-5 peer-checked:bg-primary" />
+            </span>
+          </label>
+        </div>
+
+        <div className="grid gap-2 border-t border-border pt-3">
+          <button
+            className="rounded-[14px] border border-border px-4 py-2 font-medium text-muted-foreground transition hover:bg-muted"
+            type="button"
+            onClick={onExportData}
+          >
+            Exportar datos
           </button>
+
+          <input
+            className="sr-only"
+            id="importDataInput"
+            type="file"
+            accept="application/json,.json"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+
+              if (!file) {
+                return;
+              }
+
+              onImportData(file);
+              event.target.value = "";
+            }}
+          />
+
+          <label
+            htmlFor="importDataInput"
+            className="rounded-[14px] border border-border px-4 py-2 text-center font-medium text-muted-foreground transition hover:bg-muted"
+          >
+            Importar datos
+          </label>
         </div>
       </div>
     </aside>

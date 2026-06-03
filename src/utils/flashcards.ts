@@ -1,4 +1,10 @@
-import type { FlashcardList, FlashcardCard } from "../types";
+import type {
+  FlashcardCard,
+  FlashcardList,
+  RecallSettings,
+  RecallState,
+  SrsCardData,
+} from "../types";
 
 export function createId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -134,28 +140,191 @@ export function getUniqueListName(baseName: string, lists: FlashcardList[]) {
   return candidate;
 }
 
-export function normalizeLists(savedLists: FlashcardList[]) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function normalizeSrsData(value: unknown): SrsCardData | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const due = typeof value.due === "string" ? value.due : null;
+
+  if (!due || Number.isNaN(new Date(due).getTime())) {
+    return undefined;
+  }
+
+  const stability =
+    typeof value.stability === "number" ? value.stability : 0;
+  const difficulty =
+    typeof value.difficulty === "number" ? value.difficulty : 0;
+  const elapsed_days =
+    typeof value.elapsed_days === "number" ? value.elapsed_days : 0;
+  const scheduled_days =
+    typeof value.scheduled_days === "number" ? value.scheduled_days : 0;
+  const reps = typeof value.reps === "number" ? value.reps : 0;
+  const lapses = typeof value.lapses === "number" ? value.lapses : 0;
+  const state = typeof value.state === "number" ? value.state : 0;
+
+  const lastReview =
+    typeof value.last_review === "string" &&
+    !Number.isNaN(new Date(value.last_review).getTime())
+      ? value.last_review
+      : null;
+
+  return {
+    due,
+    stability,
+    difficulty,
+    elapsed_days,
+    scheduled_days,
+    reps,
+    lapses,
+    state,
+    last_review: lastReview,
+  };
+}
+
+export function normalizeLists(savedLists: unknown): FlashcardList[] {
+  if (!Array.isArray(savedLists)) {
+    return [];
+  }
+
   return savedLists
-    .map((list) => ({
-      id: list.id || String(Date.now()),
-      name: list.name || "Lista",
-      labels:
-        Array.isArray(list.labels) && list.labels.length >= 2
-          ? ([list.labels[0], list.labels[1]] as [string, string])
-          : (["Columna 1", "Columna 2"] as [string, string]),
-      cards: Array.isArray(list.cards)
-        ? list.cards
-            .map((card) => ({
-              id: card.id || createId(),
-              left: card.left || "",
-              right: card.right || "",
-              status:
-                card.status === "known" || card.status === "unknown"
-                  ? card.status
-                  : null,
-            }))
-            .filter((card) => card.left && card.right)
-        : [],
-    }))
-    .filter((list) => list.cards.length > 0);
+    .map((value): FlashcardList | null => {
+      if (!isRecord(value)) {
+        return null;
+      }
+
+      const rawLabels = Array.isArray(value.labels) ? value.labels : [];
+
+      const labels: [string, string] = [
+        typeof rawLabels[0] === "string" && rawLabels[0]
+          ? rawLabels[0]
+          : "Columna 1",
+        typeof rawLabels[1] === "string" && rawLabels[1]
+          ? rawLabels[1]
+          : "Columna 2",
+      ];
+
+      const rawCards = Array.isArray(value.cards) ? value.cards : [];
+
+      const cards = rawCards
+        .map((cardValue): FlashcardCard | null => {
+          if (!isRecord(cardValue)) {
+            return null;
+          }
+
+          const left =
+            typeof cardValue.left === "string" ? cardValue.left : "";
+          const right =
+            typeof cardValue.right === "string" ? cardValue.right : "";
+
+          if (!left || !right) {
+            return null;
+          }
+
+          const status =
+            cardValue.status === "known" || cardValue.status === "unknown"
+              ? cardValue.status
+              : null;
+
+          const card: FlashcardCard = {
+            id: typeof cardValue.id === "string" ? cardValue.id : createId(),
+            left,
+            right,
+            status,
+          };
+
+          const srs = normalizeSrsData(cardValue.srs);
+
+          if (srs) {
+            card.srs = srs;
+          }
+
+          return card;
+        })
+        .filter((card): card is FlashcardCard => Boolean(card));
+
+      if (cards.length === 0) {
+        return null;
+      }
+
+      return {
+        id: typeof value.id === "string" ? value.id : createId(),
+        name: typeof value.name === "string" ? value.name : "Lista",
+        labels,
+        cards,
+      };
+    })
+    .filter((list): list is FlashcardList => Boolean(list));
+}
+
+function normalizeSettings(value: unknown): RecallSettings {
+  if (!isRecord(value)) {
+    return {
+      spacedRepetitionEnabled: false,
+    };
+  }
+
+  return {
+    spacedRepetitionEnabled: Boolean(value.spacedRepetitionEnabled),
+  };
+}
+
+export function normalizeRecallState(value: unknown): RecallState {
+  if (!isRecord(value)) {
+    return createEmptyRecallState();
+  }
+
+  const lists = normalizeLists(value.lists);
+
+  const currentListId =
+    typeof value.currentListId === "string" &&
+    lists.some((list) => list.id === value.currentListId)
+      ? value.currentListId
+      : lists[0]?.id || null;
+
+  return {
+    lists,
+    currentListId,
+    currentIndex:
+      typeof value.currentIndex === "number" &&
+      Number.isInteger(value.currentIndex)
+        ? value.currentIndex
+        : 0,
+    flipped: Boolean(value.flipped),
+    firstSide: value.firstSide === "right" ? "right" : "left",
+    phase: value.phase === "failed" ? "failed" : "all",
+    sessionFinished: Boolean(value.sessionFinished),
+    sessionTotal:
+      typeof value.sessionTotal === "number" &&
+      Number.isInteger(value.sessionTotal)
+        ? value.sessionTotal
+        : 0,
+    sessionReviewedIds: Array.isArray(value.sessionReviewedIds)
+      ? value.sessionReviewedIds.filter(
+          (item): item is string => typeof item === "string",
+        )
+      : [],
+    settings: normalizeSettings(value.settings),
+  };
+}
+
+export function createEmptyRecallState(): RecallState {
+  return {
+    lists: [],
+    currentListId: null,
+    currentIndex: 0,
+    flipped: false,
+    firstSide: "left",
+    phase: "all",
+    sessionFinished: false,
+    sessionTotal: 0,
+    sessionReviewedIds: [],
+    settings: {
+      spacedRepetitionEnabled: false,
+    },
+  };
 }
