@@ -1,0 +1,217 @@
+@import "tailwindcss";
+
+/* -------------------- TEMA -------------------- */
+
+@theme {
+  --color-background: #0f1418;
+  --color-foreground: #f0f4f8;
+
+  --color-card: #131a23;
+
+  --color-primary: #4f8cff;
+  --color-primary-foreground: #ffffff;
+
+  --color-secondary: #1a2330;
+  --color-secondary-foreground: #76a7ff;
+
+  --color-muted: #222c38;
+  --color-muted-foreground: #8a95a5;
+
+  --color-border: #2a3544;
+
+  --color-highlight: #7bb8ff;
+  --color-surface: #18212c;
+
+  --radius: 0.75rem;
+}
+
+/* -------------------- ESTILOS BASE -------------------- */
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(
+        circle at top left,
+        color-mix(in srgb, var(--color-primary) 18%, transparent),
+        transparent 32rem
+      ),
+      var(--color-background);
+    color: var(--color-foreground);
+    font-family: "Inter", sans-serif;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  .font-serif {
+    font-family: "Playfair Display", serif;
+  }
+}
+
+/* -------------------- COMPONENTES REUTILIZABLES -------------------- */
+
+@layer components {
+  .glass {
+    background-color: color-mix(in srgb, var(--color-surface) 50%, transparent);
+    backdrop-filter: blur(16px);
+    border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+  }
+
+  .glass-strong {
+    background-color: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    backdrop-filter: blur(24px);
+    border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  }
+
+  .glow-text {
+    text-shadow: 0 0 30px
+      color-mix(in srgb, var(--color-primary) 50%, transparent);
+  }
+
+  .glow-border {
+    box-shadow:
+      0 0 20px color-mix(in srgb, var(--color-primary) 20%, transparent),
+      inset 0 0 20px color-mix(in srgb, var(--color-primary) 5%, transparent);
+  }
+
+  .answer-btn {
+    width: 3.25rem;
+    height: 3.25rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.55rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+}
+
+/* -------------------- FLASHCARD -------------------- */
+
+@layer components {
+  .flashcard-wrap {
+    perspective: 1000px;
+    min-height: 340px;
+    height: 100%;
+  }
+
+  .flashcard {
+    position: relative;
+    min-height: 340px;
+    height: 100%;
+    transform-style: preserve-3d;
+    transition: transform 0.35s ease;
+    cursor: pointer;
+  }
+
+  .flashcard.is-flipped {
+    transform: rotateY(180deg);
+  }
+
+  .flashcard-face {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 4.5rem;
+    background: var(--color-card);
+    border: 1px solid var(--color-border);
+    border-radius: 26px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.24);
+    backface-visibility: hidden;
+    text-align: center;
+    user-select: none;
+  }
+
+  .flashcard-back {
+    transform: rotateY(180deg);
+  }
+
+  .card-word {
+    font-size: clamp(2rem, 6vw, 4rem);
+    font-weight: 650;
+    line-height: 1.12;
+    letter-spacing: -0.04em;
+    overflow-wrap: anywhere;
+  }
+
+  .card-label {
+    position: absolute;
+    top: 1.25rem;
+    left: 1.5rem;
+    color: var(--color-muted-foreground);
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  .card-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+    background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+    color: var(--color-muted-foreground);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.7rem;
+    line-height: 1;
+    transition:
+      background 0.15s ease,
+      transform 0.15s ease,
+      color 0.15s ease;
+    z-index: 3;
+  }
+
+  .card-arrow:hover {
+    background: var(--color-muted);
+    color: var(--color-foreground);
+  }
+
+  .card-arrow:active {
+    transform: translateY(-50%) scale(0.96);
+  }
+
+  .card-arrow-left {
+    left: 1.1rem;
+  }
+
+  .card-arrow-right {
+    right: 1.1rem;
+  }
+
+  .flashcard.card-known .flashcard-face,
+  .flashcard.answer-known .flashcard-face {
+    background: rgba(25, 135, 84, 0.16);
+    border-color: rgba(25, 135, 84, 0.38);
+  }
+
+  .flashcard.card-unknown .flashcard-face,
+  .flashcard.answer-unknown .flashcard-face {
+    background: rgba(220, 53, 69, 0.14);
+    border-color: rgba(220, 53, 69, 0.36);
+  }
+
+  @media (max-width: 575.98px) {
+    .flashcard-face {
+      padding-inline: 3.5rem;
+    }
+
+    .card-arrow {
+      width: 2rem;
+      height: 2rem;
+      font-size: 1.35rem;
+    }
+  }
+}
