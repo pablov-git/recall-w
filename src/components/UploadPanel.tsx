@@ -26,7 +26,7 @@ export function UploadPanel({ fileFeedback, onFileChange }: UploadPanelProps) {
 
         <label
           htmlFor="fileInput"
-          className="rounded-[14px] bg-primary px-4 py-2 font-medium text-primary-foreground transition hover:brightness-110"
+          className="cursor-pointer rounded-[14px] bg-primary px-4 py-2 font-medium text-primary-foreground transition hover:brightness-110"
         >
           Cargar archivo
         </label>
