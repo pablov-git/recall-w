@@ -10,7 +10,6 @@ type ControlsPanelProps = {
   onDeleteList: () => void;
   onChangeFirstSide: (firstSide: FirstSide) => void;
   onToggleSpacedRepetition: (enabled: boolean) => void;
-  onShuffle: () => void;
   onExportData: () => void;
   onImportData: (file: File) => void;
 };
@@ -25,7 +24,6 @@ export function ControlsPanel({
   onDeleteList,
   onChangeFirstSide,
   onToggleSpacedRepetition,
-  onShuffle,
   onExportData,
   onImportData,
 }: ControlsPanelProps) {
@@ -88,19 +86,6 @@ export function ControlsPanel({
             <option value="right">{labels[1] || "Columna 2"}</option>
           </select>
         </div>
-
-        {!spacedRepetitionEnabled && (
-          <div className="mb-3 grid gap-2">
-            <button
-              className="rounded-[14px] border border-primary px-4 py-2 font-medium text-secondary-foreground transition hover:bg-primary/15 disabled:opacity-60"
-              type="button"
-              disabled={disabled}
-              onClick={onShuffle}
-            >
-              Mezclar tarjetas
-            </button>
-          </div>
-        )}
 
         <div className="mb-3 rounded-[14px] border border-border bg-card p-3">
           <label

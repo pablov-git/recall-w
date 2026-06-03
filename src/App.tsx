@@ -53,6 +53,8 @@ function App() {
               sideHint={recall.sideHint}
               languageBadge={recall.languageBadge}
               progressPercentage={recall.progressPercentage}
+              showShuffleButton={!recall.spacedRepetitionEnabled}
+              onShuffle={recall.shuffleCards}
             />
 
             <div className="grid items-stretch gap-6 lg:grid-cols-[1fr_auto]">
@@ -79,7 +81,6 @@ function App() {
                 onDeleteList={recall.deleteCurrentList}
                 onChangeFirstSide={recall.changeFirstSide}
                 onToggleSpacedRepetition={recall.toggleSpacedRepetition}
-                onShuffle={recall.shuffleCards}
                 onExportData={recall.exportData}
                 onImportData={recall.importData}
               />

@@ -1,15 +1,13 @@
-import { createEmptyCard, fsrs, Rating } from "ts-fsrs";
+import { createEmptyCard, fsrs, Rating, type Card, type Grade } from "ts-fsrs";
 import type { FlashcardCard, SrsCardData, SrsRating } from "../types";
-
-type FsrsCard = ReturnType<typeof createEmptyCard>;
 
 const scheduler = fsrs();
 
-const ratingMap: Record<SrsRating, Rating> = {
-  again: Rating.Again,
-  hard: Rating.Hard,
-  good: Rating.Good,
-  easy: Rating.Easy,
+const ratingMap: Record<SrsRating, Grade> = {
+  again: Rating.Again as Grade,
+  hard: Rating.Hard as Grade,
+  good: Rating.Good as Grade,
+  easy: Rating.Easy as Grade,
 };
 
 export function isCardDue(card: FlashcardCard, now = new Date()) {
@@ -26,19 +24,21 @@ export function scheduleCardWithFsrs(
   now = new Date(),
 ): SrsCardData {
   const fsrsCard = toFsrsCard(card);
-  const result = scheduler.next(fsrsCard, now, ratingMap[rating]);
+  const grade = ratingMap[rating];
+
+  const result = scheduler.next(fsrsCard, now, grade) as { card: Card };
 
   return serializeFsrsCard(result.card);
 }
 
-function toFsrsCard(card: FlashcardCard): FsrsCard {
+function toFsrsCard(card: FlashcardCard): Card {
   const emptyCard = createEmptyCard();
 
   if (!card.srs) {
     return emptyCard;
   }
 
-  return {
+  const fsrsCard: Card = {
     ...emptyCard,
     due: new Date(card.srs.due),
     stability: card.srs.stability,
@@ -47,14 +47,17 @@ function toFsrsCard(card: FlashcardCard): FsrsCard {
     scheduled_days: card.srs.scheduled_days,
     reps: card.srs.reps,
     lapses: card.srs.lapses,
-    state: card.srs.state as FsrsCard["state"],
-    last_review: card.srs.last_review
-      ? new Date(card.srs.last_review)
-      : undefined,
+    state: card.srs.state as Card["state"],
   };
+
+  if (card.srs.last_review) {
+    fsrsCard.last_review = new Date(card.srs.last_review);
+  }
+
+  return fsrsCard;
 }
 
-function serializeFsrsCard(card: FsrsCard): SrsCardData {
+function serializeFsrsCard(card: Card): SrsCardData {
   return {
     due: card.due.toISOString(),
     stability: card.stability,
@@ -64,9 +67,6 @@ function serializeFsrsCard(card: FsrsCard): SrsCardData {
     reps: card.reps,
     lapses: card.lapses,
     state: Number(card.state),
-    last_review:
-      card.last_review instanceof Date
-        ? card.last_review.toISOString()
-        : null,
+    last_review: card.last_review ? card.last_review.toISOString() : null,
   };
 }
