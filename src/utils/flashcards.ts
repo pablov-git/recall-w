@@ -5,6 +5,7 @@ import type {
   RecallState,
   SrsCardData,
 } from "../types";
+import { createDefaultLists } from "../data/defaultLists";
 
 export function createId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -155,10 +156,8 @@ function normalizeSrsData(value: unknown): SrsCardData | undefined {
     return undefined;
   }
 
-  const stability =
-    typeof value.stability === "number" ? value.stability : 0;
-  const difficulty =
-    typeof value.difficulty === "number" ? value.difficulty : 0;
+  const stability = typeof value.stability === "number" ? value.stability : 0;
+  const difficulty = typeof value.difficulty === "number" ? value.difficulty : 0;
   const elapsed_days =
     typeof value.elapsed_days === "number" ? value.elapsed_days : 0;
   const scheduled_days =
@@ -313,15 +312,17 @@ export function normalizeRecallState(value: unknown): RecallState {
 }
 
 export function createEmptyRecallState(): RecallState {
+  const defaultLists = createDefaultLists();
+
   return {
-    lists: [],
-    currentListId: null,
+    lists: defaultLists,
+    currentListId: defaultLists[0]?.id || null,
     currentIndex: 0,
     flipped: false,
     firstSide: "left",
     phase: "all",
     sessionFinished: false,
-    sessionTotal: 0,
+    sessionTotal: defaultLists[0]?.cards.length || 0,
     sessionReviewedIds: [],
     settings: {
       spacedRepetitionEnabled: false,

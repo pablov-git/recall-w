@@ -142,7 +142,7 @@ export function ControlsPanel({
 
           <label
             htmlFor="importDataInput"
-            className="rounded-[14px] border border-border px-4 py-2 text-center font-medium text-muted-foreground transition hover:bg-muted"
+            className="cursor-pointer rounded-[14px] border border-border px-4 py-2 text-center font-medium text-muted-foreground transition hover:bg-muted"
           >
             Importar datos
           </label>
