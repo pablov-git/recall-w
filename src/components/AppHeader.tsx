@@ -6,7 +6,7 @@ export function AppHeader() {
       </div>
 
       <h1 className="glow-text text-5xl font-semibold tracking-tight">
-        Recall
+        Recard
       </h1>
     </header>
   );

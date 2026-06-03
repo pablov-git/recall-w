@@ -743,14 +743,17 @@ export function useRecall() {
         return prev;
       }
 
+      const restartedCards = list.cards.map((card) => ({
+        ...card,
+        status: null,
+        srs: undefined,
+      }));
+
       const lists = prev.lists.map((item) =>
         item.id === list.id
           ? {
               ...item,
-              cards: item.cards.map((card) => ({
-                ...card,
-                status: null,
-              })),
+              cards: restartedCards,
             }
           : item,
       );
@@ -762,7 +765,7 @@ export function useRecall() {
         currentIndex: 0,
         flipped: false,
         sessionFinished: false,
-        sessionTotal: list.cards.length,
+        sessionTotal: restartedCards.length,
         sessionReviewedIds: [],
       };
     });

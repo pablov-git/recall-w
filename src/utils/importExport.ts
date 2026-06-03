@@ -24,7 +24,7 @@ export function downloadRecallExport(state: RecallState) {
   const anchor = document.createElement("a");
 
   anchor.href = url;
-  anchor.download = `recall-export-${new Date()
+  anchor.download = `recard-export-${new Date()
     .toISOString()
     .slice(0, 10)}.json`;
 
@@ -43,11 +43,11 @@ export async function readRecallImport(file: File): Promise<RecallState> {
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new Error("El archivo no es una exportación válida de Recall.");
+    throw new Error("El archivo no es una exportación válida de Recard.");
   }
 
   if (!isRecord(parsed) || parsed.schema !== EXPORT_SCHEMA) {
-    throw new Error("El archivo no es una exportación válida de Recall.");
+    throw new Error("El archivo no es una exportación válida de Recard.");
   }
 
   return normalizeRecallState(parsed.state);
