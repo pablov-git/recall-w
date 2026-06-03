@@ -141,7 +141,7 @@ Users can export all their data to a JSON file and import it again later. Import
 ## 🚀 Deployment
 
 The project is live at:
-👉 link
+👉 https://recard.vercel.app/
 
 ---
 
