@@ -13,14 +13,14 @@ function App() {
 
   if (!recall.isReady) {
     return (
-      <main className="mx-auto max-w-[980px] px-4 py-6 lg:py-10">
+      <main className="mx-auto max-w-[980px] px-4 pt-24 pb-6 lg:pt-32 lg:pb-10">
         <AppHeader />
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-[980px] px-4 py-6 lg:py-10">
+    <main className="mx-auto max-w-[980px] px-4 pt-24 pb-6 lg:pt-32 lg:pb-10">
       <AppHeader />
 
       <UploadPanel
